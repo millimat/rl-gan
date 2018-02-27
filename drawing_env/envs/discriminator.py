@@ -22,7 +22,13 @@ class RLDiscriminator(object):
         real_batch = self._get_next_real_batch()
         fake_batch = np.zeros((1, self.input_height * self.input_width))  # TODO: Somehow do batches for fake images as well...
         fake_batch[0] = fake_image
-        _, real_loss, real_prob, fake_loss, fake_prob = self.sess.run([self.train_disc, self.disc_real_loss, self.discriminator_real_probability, self.disc_fake_loss, self.discriminator_fake_probability], {self.real_input_images: real_batch, self.fake_input_images: fake_batch})
+        _, real_loss, real_prob, fake_loss, fake_prob = self.sess.run([self.train_disc,
+                                                                       self.disc_real_loss,
+                                                                       self.discriminator_real_probability,
+                                                                       self.disc_fake_loss,
+                                                                       self.discriminator_fake_probability],
+                                                                      {self.real_input_images: real_batch,
+                                                                       self.fake_input_images: fake_batch})
         if debug:
             print("Disc loss")
             print("\tReal loss: " + str(real_loss))
@@ -30,7 +36,7 @@ class RLDiscriminator(object):
             print("\tFake loss: " + str(fake_loss))
             print("\tFake prob: " + str(fake_prob))
             print("")
-        return fake_prob
+        return fake_prob.reshape(-1)
 
     def get_disc_loss(self, fake_image, debug=False):
         real_batch = self._get_next_real_batch()
@@ -44,7 +50,7 @@ class RLDiscriminator(object):
             print("\tFake loss: " + str(fake_loss))
             print("\tFake prob: " + str(fake_prob))
             print("")
-        return fake_prob
+        return fake_prob.reshape(-1)
 
     # Set up all the tensors for training.
     def _build_discriminator_model(self):
