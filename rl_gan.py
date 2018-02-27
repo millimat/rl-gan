@@ -8,6 +8,7 @@ import tensorflow as tf
 import tensorforce
 from tensorforce.contrib.openai_gym import OpenAIGym
 from tensorforce.execution import Runner
+import tforce_additions.preprocessors
 
 #BETA1 = 0.5
 LEARNING_RATE = 1e-3
@@ -26,18 +27,26 @@ num_actions_per_pixel = NUM_POSSIBLE_PIXEL_COLORS
 discount = drawing_env.envs.draw_env.GAMMA
 
 # Generic agent specs for TensorForce
+
 # Note: TensorForce attempts to access MultiDiscrete's gym.observation_space field
 # which is not supported as of gym 0.10.x; the following line is a workaround
-states = dict(shape=env_tforce.gym.observation_space.nvec.size, type='float') # States passed as floats so compatible with tf matmul
+states = dict(shape=env_tforce.gym.observation_space.nvec.size, type='int')
 actions = env_tforce.actions
 #actions = dict(num_actions=env_tforce.gym.action_space.n, type='int') # Passed as ints so compatible with TensorBoard histograms
 adam_optimizer = dict(type='adam', learning_rate=LEARNING_RATE)
 tensorboard_summary_spec_generic = dict(steps=10, # log TensorBoard info every 10 steps
                                         labels=['losses', 'network_variables', 'inputs', 'gradients_scalar'])
 
-# DQN architecture; see tensorforce/core/networks/layer.py for documentation
-# and tensorforce/examples/configs for example setups
+# Preprocessing: cast int-tuple states to float-tuples because tensorforce layers
+# expect float32 inputs
+preprocessing_config = [dict(type='tforce_additions.preprocessors.Cast', dtype=tf.float32)]
+
+
+# DQN agent
 from tensorforce.agents import DQNAgent
+
+# Architecture: see tensorforce/core/networks/layer.py for documentation
+# and tensorforce/examples/configs for example setups
 dqn_spec = [
         # Layer 1: fully connected, num states->num actions, LReLU activation
         dict(type='linear', size=num_pixels*num_actions_per_pixel),
@@ -48,24 +57,24 @@ dqn_spec = [
         dict(type='nonlinearity', name='lrelu', alpha=0.2), 
 ]
 
-# DQN agent
 dqn_summary_spec = deepcopy(tensorboard_summary_spec_generic)
 dqn_summary_spec['directory'] = 'results/dqn/'
 
+import pdb; pdb.set_trace()
 # TODO: investigate actions_exploration parameter. Passed to Model superclass and to Exploration
 # object to initialize an exploration strategy, not sure what exploration types are valid/what params
 # NOTE: Arguments don't appear to allow configuring loss function other than huber_loss;
 #       assuming uses MSVE of Q-value as in Mnih et al. 2015
 dqn_agent = DQNAgent(states, actions, dqn_spec, discount=discount,
                      optimizer=adam_optimizer,
-                     memory=None, # Experience replay buffer; see TF doc for default vals
+                     states_preprocessing=preprocessing_config, # Convert states to float32
+                     memory=None, # Experience replay buffer; see tensorforce doc for default vals
                      target_sync_frequency=10000, # How often to update the target network
-                     target_update_weight=1.0, # Has something to do with updating target network, can't find info in Mnih.
+                     target_update_weight=1.0, # Has something to do with updating target network? Default val
                      summarizer=dqn_summary_spec
 )
 
-
-
+import pdb; pdb.set_trace()
 runner = Runner(dqn_agent, env_tforce)
 def ep_finished(runnr):
         # Notify environment to use current runner policy as rollout policy for reward estimation
@@ -76,8 +85,8 @@ def ep_finished(runnr):
                 print("Average of last 10 rewards: {}".format(np.mean(runnr.episode_rewards[-10:])))
         return True
 
-#import pdb; pdb.set_trace()
 # TODO: Investigate how long to set max_episode_timesteps
+import pdb; pdb.set_trace()
 runner.run(num_episodes = 100, max_episode_timesteps=100, episode_finished=ep_finished)
 
 
