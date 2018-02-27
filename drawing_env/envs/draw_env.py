@@ -27,12 +27,18 @@ class DrawEnv(Env):
 		#
 		# Note that the actions are to select 0 (meaning color white) or 1
 		# (meaning color black) for a given pixel.
+                
+                # TODO (matt): switch MultiBinary to MultiDiscrete([NUM_POSSIBLE_PIXEL_VALUES-1, dimension**2]).
+                # TODO (matt): switch unknown pixel from 0 to NUM_POSSIBLE_PIXEL_VALUES-1 so that actions
+                # correspond to coloring pixels specific colors
 		self.action_space = spaces.MultiBinary(dimension*dimension)
 
 		# The first value in the action tuple is the pixel.
 		#
 		# The second value in the action is the pixel coordinate, flattened
 		# into a 1d value.
+                
+                # TODO (matt): Should the state be the current state of all pixels?
 		self.observation_space = spaces.MultiDiscrete([NUM_POSSIBLE_PIXEL_VALUES, dimension*dimension])
 
 		self._reset_pixel_values()
