@@ -1,21 +1,77 @@
+from copy import deepcopy
 import gym
 import drawing_env
 from drawing_env.envs.ops import *
 import numpy as np
 import tensorflow as tf
 
-BETA1 = 0.5
+import tensorforce
+from tensorforce.contrib.openai_gym import OpenAIGym
+from tensorforce.execution import Runner
+
+#BETA1 = 0.5
 LEARNING_RATE = 1e-3
-BATCH_SIZE = 1
+#BATCH_SIZE = 1
 DIMENSION = 3
 NUM_EPISODES = 50000
 NUM_POSSIBLE_PIXEL_COLORS = 2
 EPSILON_GREEDY_START = 0.4
 EPSILON_GREEDY_PER_EPISODE_DECAY = 0.9999
 
-env = gym.make('DrawEnv-v0')
+env_tforce = OpenAIGym('DrawEnv-v0') # The Gym environment is accessible with env_tforce.gym
 
-# DQN Architecture
+# General environment info
+num_pixels = DIMENSION**2
+num_actions_per_pixel = NUM_POSSIBLE_PIXEL_COLORS
+discount = drawing_env.envs.draw_env.GAMMA
+
+# Generic agent specs for TensorForce
+# Note: TensorForce attempts to access MultiDiscrete's gym.observation_space field
+# which is not supported as of gym 0.10.x; the following line is a workaround
+states = dict(shape=env_tforce.gym.observation_space.nvec.size, type='float') # States passed as floats so compatible with tf matmul
+#actions = env_tforce.actions
+actions = dict(num_actions=env_tforce.gym.action_space.n, type='int') # Passed as ints so compatible with TensorBoard histograms
+adam_optimizer = dict(type='adam', learning_rate=LEARNING_RATE)
+tensorboard_summary_spec_generic = dict(steps=10, # log TensorBoard info every 10 steps
+                                        labels=['losses', 'network_variables', 'inputs', 'gradients_scalar'])
+
+# DQN architecture; see tensorforce/core/networks/layer.py for documentation
+# and tensorforce/examples/configs for example setups
+from tensorforce.agents import DQNAgent
+dqn_spec = [
+        # Layer 1: fully connected, num states->num actions, LReLU activation
+        dict(type='linear', size=num_pixels*num_actions_per_pixel),
+        dict(type='nonlinearity', name='lrelu', alpha=0.2),#, alpha=0.2), # alpha: slope at x < 0
+        
+        # Layer 2: fully connected, num actions->num actions, LReLU activation
+        dict(type='linear', size=num_pixels*num_actions_per_pixel),
+        dict(type='nonlinearity', name='lrelu', alpha=0.2), 
+]
+
+# DQN agent
+dqn_summary_spec = deepcopy(tensorboard_summary_spec_generic)
+dqn_summary_spec['directory'] = 'results/dqn/'
+
+# TODO: investigate actions_exploration parameter. Passed to Model superclass and to Exploration
+# object to initialize an exploration strategy, not sure what exploration types are valid/what params
+# NOTE: Arguments don't appear to allow configuring loss function other than huber_loss;
+#       assuming uses MSVE of Q-value as in Mnih et al. 2015
+dqn_agent = DQNAgent(states, actions, dqn_spec, discount=discount,
+                     optimizer=adam_optimizer,
+                     memory=None, # Experience replay buffer; see TF doc for default vals
+                     target_sync_frequency=10000, # How often to update the target network
+                     target_update_weight=1.0, # Has something to do with updating target network, can't find info in Mnih.
+                     summarizer=dqn_summary_spec
+)
+
+import pdb; pdb.set_trace()
+
+runner = Runner(agent=dqn_agent, environment=env_tforce.gym)
+
+
+
+
+
 def deep_q_network(state, num_pixels, num_actions_per_pixel):
 	with tf.variable_scope("deep_q_network") as scope:
         # TODO: Convert this into an actual ConvNet
