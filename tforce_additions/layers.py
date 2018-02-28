@@ -7,7 +7,7 @@ class Cast(Layer):
         super(Cast, self).__init__(scope=scope, summary_labels=summary_labels)
         self.dtype = dtype
 
-    def tf_apply(self, x):
+    def tf_apply(self, x, update):
         # Cast to desired type
         if self.dtype is None:
             return tf.identity(x)
