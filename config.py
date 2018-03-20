@@ -1,7 +1,9 @@
 import drawing_env.envs.config as de_cfg
 
 # NOTE: Using env with discriminator trained only at end of episode.
-# Discriminator clamped to class 8.
+# Discriminator uses all classes.
+# In previous runs, D's MLP used two linear layers and thus was only
+# one layer. This has been fixed in this run.
 
 # General parameters
 FULL_DIMENSION = de_cfg.MNIST_DIMENSION
@@ -25,3 +27,4 @@ PG_NDRAWS_PER_BATCH = 50
 PG_BATCH_NSTEPS = PG_NDRAWS_PER_BATCH*PG_EPISODE_LENGTH
 PG_NUM_BATCHES = 50
 PG_GSTEPS_PER_DSTEPS = 3
+PG_PRETRAIN_ITERS = 100

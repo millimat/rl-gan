@@ -20,7 +20,7 @@ def deep_q_network(pixels, coordinate, number, num_actions_per_pixel):
                 h2_flatted = tf.layers.flatten(h2)
                 
 		# Append coordinate and number label to last layer because we don't want it to be convoluted with
-		# the pixel values. # TODO (matt): should we instead have one agent per number?
+		# the pixel values. 
 		h3 = dense(tf.concat([h2_flatted, coordinate, number], axis=1), FULL_DIMENSION*FULL_DIMENSION, name="dense1")
 		h4 = dense(h3, FULL_DIMENSION, name="dense2")
 		h5 = dense(h4, num_actions_per_pixel, name="dense3")

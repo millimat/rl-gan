@@ -7,8 +7,6 @@ from ascii_render import im_to_ascii
 
 # The external API is to simply call train with a fake image. This will then do one forward prop,
 # return the probability assigned to this fake image, and update its parameters.
-# TODO: support larger batches
-# TODO: Create new discriminator and new env that train only at ends of episodes?
 class RLDiscriminator(object):
 	def __init__(self, sess, input_height=MNIST_DIMENSION, input_width=MNIST_DIMENSION,
 				 batch_size=10, class_labels=MNIST_DIGITS, train_class=None):
@@ -61,8 +59,8 @@ class RLDiscriminator(object):
 		return fake_batch, label_batch
 
 	
-	def get_real_batch(self, num_unfilled):
-		return self._get_next_real_batch(num_unfilled)
+	def get_real_batch(self, num_unfilled, size=None):
+		return self._get_next_real_batch(num_unfilled, size)
 
 	
 	def loss_tensors(self):
@@ -162,10 +160,13 @@ class RLDiscriminator(object):
 		return optimizer.apply_gradients(grads)
 
 	
-	def _get_next_real_batch(self, num_unfilled):
-		batch = np.zeros((self.batch_size, self.input_height * self.input_width))
-		labels = np.zeros((self.batch_size, 1))
-		for i in xrange(self.batch_size):
+	def _get_next_real_batch(self, num_unfilled, size=None):
+		if size is None:
+			size = self.batch_size
+			
+		batch = np.zeros((size, self.input_height * self.input_width))
+		labels = np.zeros((size, 1))
+		for i in xrange(size):
 			image, label = self._get_next_real_image(self.train_class)
 			if num_unfilled != 0:
 				image[-num_unfilled:] = UNFILLED_PX_VALUE
@@ -268,13 +269,16 @@ class RLDiscriminatorFullImagesOnly(RLDiscriminator):
 		return fake_prob, real_prob
 
 
-	def get_next_batch(self):
-		return self._get_next_real_batch()
+	def get_real_batch(self, size=None):
+		return self._get_next_real_batch(size)
 	
-	def _get_next_real_batch(self):
-		batch = np.zeros((self.batch_size, self.input_height * self.input_width))
-		labels = np.zeros((self.batch_size, 1))
-		for i in xrange(self.batch_size):
+	def _get_next_real_batch(self, size=None):
+		if size is None:
+			size = self.batch_size
+		
+		batch = np.zeros((size, self.input_height * self.input_width))
+		labels = np.zeros((size, 1))
+		for i in xrange(size):
 			image, label = self._get_next_real_image(self.train_class)
 			batch[i] = image
 			labels[i] = label
@@ -305,7 +309,7 @@ class RLDiscriminatorFullImagesOnly(RLDiscriminator):
 			h2 = lrelu(conv2d(h1, 16, 2, 2, 1, 1, name="conv3"))
 			h2_flatted = tf.reshape(h2, [batch_size, self.input_height * self.input_width * 16])
 			concated = tf.concat([label, h2_flatted], axis=1)
-			h3 = dense(concated, self.input_height * self.input_width * 2, name='dense1')
-			h4 = dense(h3, 1, name='dense2')
+			h3 = tf.contrib.layers.fully_connected(concated, 2*self.input_height*self.input_width, activation_fn=tf.nn.relu)
+			h4 = tf.contrib.layers.fully_connected(h3, 1, activation_fn=None)
 
 			return tf.nn.sigmoid(h4), h4

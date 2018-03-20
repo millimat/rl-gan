@@ -38,7 +38,7 @@ class DrawPG(object):
 	"""
 	def __init__(self, env, output_path, model_path, log_path, im_path, gamma=1, lr=PG_LR,
 				 use_baseline=True, normalize_advantage=True, batch_size=PG_BATCH_NSTEPS,
-				 num_batches=PG_NUM_BATCHES, gsteps_per_dstep=5,
+				 num_batches=PG_NUM_BATCHES, gsteps_per_dstep=5, pretrain_iters=PG_PRETRAIN_ITERS,
 				 summary_freq=PG_SUMMARY_FREQ, draw_freq=PG_DRAW_FREQ):
 		"""
 		Initialize Policy Gradient Class
@@ -65,6 +65,7 @@ class DrawPG(object):
 		self.batch_size = batch_size
 		self.num_batches = num_batches
 		self.gsteps_per_dstep = gsteps_per_dstep # how many rounds to train agent before training dscrm
+		self.pretrain_iters = pretrain_iters
 		self.summary_freq = summary_freq
 		self.draw_freq = draw_freq
 		
@@ -74,7 +75,8 @@ class DrawPG(object):
 		# build model
 		self.build()
 
-		
+	########## INITIALIZATION AND NETWORK CONSTRUCTION ##########
+	
 	def add_placeholders_op(self):
 		"""
 		dds placeholders to the graph
@@ -118,7 +120,8 @@ class DrawPG(object):
 		Sets the optimizer using AdamOptimizer
 		"""
 		self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.pg_loss)
-	
+
+		
 	
 	def add_baseline_op(self, scope = "baseline"):
 		"""
@@ -145,28 +148,20 @@ class DrawPG(object):
 		self.add_loss_op()
 		# add optimizer for the main networks
 		self.add_optimizer_op()
-	
+
 		if self.use_baseline:
 			self.add_baseline_op()
-
-
-	def initialize(self):
-		"""
-		Assumes the graph has been constructed (have called self.build())
-		Creates a tf Session and run initializer of variables
-
-		You don't have to change or use anything here.
-		"""
-		# create tf session, send info to env
-		self.sess = tf.Session()
-		self.env.set_session(self.sess)
-		# tensorboard stuff
-		self.add_summary()
-		# initiliaze all variables
-		init = tf.global_variables_initializer()
-		self.sess.run(init)
 	
+		
+		# Pre-training
+		self.add_pretrain_loss_op()
+		self.add_pretrain_optimizer_op()
+		
 	
+		
+
+	########## TENSORBOARD SUMMARIES ##########
+		
 	def add_summary(self):
 		"""
 		Tensorboard stuff. 
@@ -243,17 +238,7 @@ class DrawPG(object):
 		self.file_writer.flush()
 
 
-	def init_discriminator(self):
-		''' 
-		Initialize the DrawEnv's discriminator with some training. 
-		'''
-		real_prob = 0.5
-		fake_prob = 0.5
-		for _ in range(5000):
-			fake_prob, real_prob = self.env.train_disc_random_fake()
-			if real_prob >= 0.75 or fake_prob <= 0.25:
-				break
-
+	########## PATH SAMPLING AND ADVANTAGE ESTIMATION ##########
 			
 	def sample_path(self, env, num_episodes=None):
 		"""
@@ -393,7 +378,64 @@ class DrawPG(object):
 												self.number_placeholder: numbers,
 												self.baseline_target_placeholder: returns})
 
+
+	########## PRE-TRAINING ##########
+	def init_discriminator(self):
+		''' 
+		Initialize the DrawEnv's discriminator with some training. 
+		'''
+		real_prob = 0.5
+		fake_prob = 0.5
+		for _ in range(5000):
+			fake_prob, real_prob = self.env.train_disc_random_fake()
+			if real_prob >= 0.75 or fake_prob <= 0.25:
+				break
+
+	def add_pretrain_loss_op(self, scope='pre-train'):
+		# Maximize mean logprob of taking actions over pixel data
+		with tf.variable_scope(scope):
+			self.pretrain_loss = -tf.reduce_mean(self.logprob, name='pretrain_loss')
+
+
+	def add_pretrain_optimizer_op(self):
+		# Optimize pretrain loss
+		self.pretrain_op = tf.train.AdamOptimizer().minimize(self.pretrain_loss)
+			
 	
+	def init_generator(self):
+		print('Pre_training generator...')
+		real_images, real_labels = self.env.rl_discriminator.get_real_batch(size=100)
+		pixels = []
+		coords = []
+		nums = []
+		true_fills = []
+		for j in xrange(len(real_images)):
+			im = real_images[j]
+			label = real_images[j, 0]
+			# Iterate backwards over complete image, moving backwards through a hypothetical
+			# episode where this image was generated. Black out coords as we move backwards
+			for crd in xrange(len(im)-1, 0, -1): 
+				pixels.append([get_local_pixels(im, crd, window_size=LOCAL_DIMENSION)])
+				coords.append([crd])
+				nums.append([label])
+				true_fills.append([im[crd] - de_cfg.MIN_PX_VALUE])
+				im[crd] = de_cfg.UNFILLED_PX_VALUE
+
+		pixels = np.concatenate(pixels)
+		coords = np.concatenate(coords)
+		nums = np.concatenate(nums)
+		true_fills = np.concatenate(true_fills)
+
+		for i in range(self.pretrain_iters):
+			if i % 1 == 0:
+				print('\tIter {}'.format(i))
+			self.sess.run(self.pretrain_op, feed_dict={self.pixels_placeholder: pixels,
+													   self.coordinate_placeholder: coords,
+													   self.number_placeholder: nums,
+													   self.taken_action_placeholder: true_fills})
+						
+	########## TRAINING ##########
+			
 	def generate_batch(self):
 		"""
 		Run self.batch_size episodes to generate images with class labels.
@@ -404,7 +446,7 @@ class DrawPG(object):
 		digit_labels = [[p['numbers'][-1]] for p in paths]
 
 		return (np.array(images, dtype=int), np.array(digit_labels, dtype=int))
-	
+
 	
 	def train(self):
 		"""
@@ -415,6 +457,7 @@ class DrawPG(object):
 		scores_eval = []
 
 		self.init_discriminator()
+		# self.init_generator()
 		self.init_statistics()
 		scores_eval = [] # list of scores computed at iteration time
 		
@@ -455,7 +498,7 @@ class DrawPG(object):
 			# get losses for discriminator
 			dscr_placeholders = env.get_discrim_placeholders()
 			if isinstance(self.env, DrawEnvTrainOnDemand):
-				real, real_labels = self.env.rl_discriminator.get_next_batch()
+				real, real_labels = self.env.rl_discriminator.get_real_batch()
 				dscr_values = [real, real_labels, image_batch, label_batch]
 			else:
 				dscr_values = env.get_discrim_placeholder_values() 
@@ -485,7 +528,26 @@ class DrawPG(object):
 		self.saver = tf.train.Saver()
 		self.saver.save(self.sess, self.model_path)
 
-	
+
+	########## HIGH-LEVEL OPS ###########
+
+	def initialize(self):
+		"""
+		Assumes the graph has been constructed (have called self.build())
+		Creates a tf Session and run initializer of variables
+
+		You don't have to change or use anything here.
+		"""
+		# create tf session, send info to env
+		self.sess = tf.Session()
+		self.env.set_session(self.sess)
+		# tensorboard stuff
+		self.add_summary()
+		# initiliaze all variables
+		init = tf.global_variables_initializer()
+		self.sess.run(init)
+
+		
 	def run(self):
 		"""
 		Apply procedures of training for a PG.

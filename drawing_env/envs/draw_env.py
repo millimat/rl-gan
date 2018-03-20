@@ -163,7 +163,7 @@ class DrawEnv(Env):
 
 ########### ENV TRAINING DISC ON DEMAND AND ONLY REWARDING AT END OF EPISODES ##########
 class DrawEnvTrainOnDemand(DrawEnv):
-	def __init__(self, batch_size=10, dimension=MNIST_DIMENSION, digit=8):
+	def __init__(self, batch_size=10, dimension=MNIST_DIMENSION, digit=None):
 		DrawEnv.__init__(self, dimension, digit)
 		self.disc_batch_size = batch_size
 
